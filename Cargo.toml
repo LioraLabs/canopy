@@ -1,0 +1,51 @@
+[package]
+name = "canopy"
+version = "0.1.0"
+edition = "2021"
+description = "Local semantic code search powered by tree-sitter and vector embeddings"
+authors = ["Liora Labs, LLC"]
+license = "MIT"
+repository = "https://github.com/lioralabs/canopy"
+
+[lib]
+name = "canopy"
+path = "src/lib.rs"
+
+[[bin]]
+name = "canopy"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.13", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bitcode = "0.6"
+tokio = { version = "1", features = ["full"] }
+toml = "1"
+axum = "0.8"
+
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-python = "0.25"
+tree-sitter-go = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-c-sharp = "0.23"
+
+ignore = "0.4"
+futures = "0.3"
+indicatif = "0.18"
+tree-sitter-md = "0.5.3"
+redb = "4"
+usearch = "2"
+ordered-float = "5"
+globset = "0.4"
+schemars = "1"
+
+[dev-dependencies]
+tempfile = "3"

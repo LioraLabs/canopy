@@ -1,0 +1,1741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>canopy — graph view</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f; color: #e0e0e0;
+    font-family: -apple-system, system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  /* ---- Main layout ---- */
+  #main {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: row;
+  }
+
+  /* ---- Left panel ---- */
+  #left-panel {
+    width: 320px; min-width: 200px; max-width: 60vw;
+    background: #0e0e1a;
+    display: flex; flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  /* ---- Resize handle ---- */
+  #resize-handle {
+    width: 4px; cursor: col-resize;
+    background: #1e1e2e; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  #resize-handle:hover, #resize-handle.dragging {
+    background: #7b8cff;
+  }
+  #panel-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid #1e1e2e;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel-logo { display: flex; align-items: center; gap: 6px; }
+  .logo-icon { color: #7b8cff; font-size: 14px; }
+  .logo-text { color: #e0e0e0; font-weight: 600; font-size: 13px; }
+  .gear-btn {
+    background: none; border: none; color: #555; font-size: 16px;
+    cursor: pointer; padding: 4px;
+  }
+  .gear-btn:hover { color: #7b8cff; }
+
+  /* ---- Results area ---- */
+  #results-area {
+    flex: 1; overflow-y: auto; padding: 12px;
+    scrollbar-width: thin; scrollbar-color: #333 transparent;
+  }
+
+  /* ---- Input area ---- */
+  #input-area {
+    padding: 10px; border-top: 1px solid #1e1e2e;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #query-row {
+    display: flex; gap: 6px; align-items: center;
+  }
+  #strategy-select {
+    background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 4px;
+    padding: 6px 8px; color: #7b8cff; font-size: 11px; cursor: pointer;
+  }
+  #query-input {
+    flex: 1; padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2a3e;
+    background: #1a1a2e; color: #e0e0e0; font-size: 12px; outline: none;
+  }
+  #query-input:focus { border-color: #7b8cff; }
+  #query-input::placeholder { color: #555; }
+  .submit-btn {
+    background: #7b8cff; color: #000; border: none; border-radius: 4px;
+    padding: 6px 10px; font-size: 13px; cursor: pointer; font-weight: 600;
+  }
+  .submit-btn:hover { background: #8e9dff; }
+  #status {
+    font-size: 0.72rem; color: #555; text-align: center;
+    min-height: 1em;
+  }
+  .synth-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .synth-label {
+    font-size: 10px; color: #888; cursor: pointer;
+    user-select: none; display: flex; align-items: center; gap: 4px;
+  }
+  .synth-label.disabled {
+    color: #444; cursor: default;
+  }
+  .synth-label input[type="checkbox"] {
+    accent-color: #7b8cff; cursor: pointer;
+  }
+  .synth-label.disabled input[type="checkbox"] {
+    cursor: default;
+  }
+
+  /* ---- Entity fields (seed/target) ---- */
+  .entity-field {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .field-label {
+    color: #555; font-size: 9px; letter-spacing: 0.06em;
+    text-transform: uppercase; white-space: nowrap; min-width: 44px;
+  }
+  .entity-input-wrap {
+    flex: 1; position: relative;
+  }
+  .entity-input {
+    width: 100%; padding: 5px 24px 5px 8px; border-radius: 4px;
+    border: 1px solid #2a2a3e; background: #1a1a2e;
+    color: #ccc; font-size: 11px; outline: none;
+  }
+  .entity-input:focus { border-color: #7b8cff; }
+  .entity-input::placeholder { color: #444; }
+  .entity-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    color: #444; cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .entity-clear:hover { color: #888; }
+
+  /* ---- Entity dropdown ---- */
+  .entity-dropdown {
+    display: none; position: absolute; bottom: calc(100% + 4px);
+    left: 0; right: 0; background: #1a1a2e; border: 1px solid #2a2a3e;
+    border-radius: 6px; max-height: 200px; overflow-y: auto; z-index: 30;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+    scrollbar-width: thin; scrollbar-color: #333 transparent;
+  }
+  .entity-dropdown.open { display: block; }
+  .entity-dropdown-item {
+    padding: 6px 10px; cursor: pointer; display: flex;
+    justify-content: space-between; align-items: center;
+    font-size: 11px;
+  }
+  .entity-dropdown-item:hover,
+  .entity-dropdown-item.active {
+    background: rgba(123, 140, 255, 0.1);
+  }
+  .entity-item-name { color: #ccc; }
+  .entity-item-name mark { background: none; color: #7b8cff; font-weight: 600; }
+  .entity-item-meta { color: #555; font-size: 9px; }
+
+  /* ---- Synthesis zone ---- */
+  #synthesis-zone { display: none; margin-bottom: 16px; }
+  #synthesis-zone.visible { display: block; }
+  .zone-header {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #7b8cff; margin-bottom: 8px; font-weight: 600;
+  }
+  #synthesis-content {
+    font-size: 0.82rem; line-height: 1.6; color: #ccc;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .cursor {
+    display: inline; animation: blink 0.8s step-end infinite; color: #7b8cff;
+    font-weight: 700;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---- Chunks zone ---- */
+  #chunks-zone { margin-bottom: 16px; }
+  .chunk-card {
+    background: #12121e; border-left: 2px solid #7b8cff;
+    border-radius: 4px; margin-bottom: 8px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .chunk-card:hover { border-left-color: #8e9dff; }
+  .chunk-card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px;
+  }
+  .chunk-file {
+    color: #7b8cff; font-size: 0.72rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .chunk-lang {
+    color: #666; font-size: 0.64rem; text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .chunk-score { color: #444; font-size: 0.64rem; }
+  .chunk-code {
+    padding: 6px 10px; max-height: 160px; overflow: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.72rem;
+    line-height: 1.5; color: #888; white-space: pre; tab-size: 4;
+    scrollbar-width: thin; scrollbar-color: #333 transparent;
+  }
+
+  /* ---- Symbols zone ---- */
+  #symbols-zone { margin-bottom: 16px; }
+  .symbol-row {
+    display: flex; gap: 6px; align-items: baseline;
+    padding: 4px 0; font-size: 0.72rem;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .symbol-kind {
+    color: #e8a86e; font-size: 0.64rem; text-transform: lowercase;
+    min-width: 44px;
+  }
+  .symbol-name {
+    color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .symbol-file {
+    color: #444; font-size: 0.64rem; margin-left: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* ---- Graph ---- */
+  #graph-container { flex: 1; min-width: 0; position: relative; }
+  #graph { width: 100%; height: 100%; }
+  #graph-status {
+    position: absolute; top: 10px; right: 10px;
+    color: #444; font-size: 11px;
+  }
+
+  /* ---- Tooltip ---- */
+  #tooltip {
+    position: fixed; padding: 10px 14px; border-radius: 8px;
+    background: rgba(20, 20, 30, 0.95); border: 1px solid #333;
+    font-size: 0.8rem; pointer-events: none; display: none; z-index: 20;
+    max-width: 400px; line-height: 1.5;
+  }
+  #tooltip .tt-name { font-weight: 700; color: #fff; font-size: 0.9rem; }
+  #tooltip .tt-type { color: #7b8cff; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  #tooltip .tt-file { color: #888; font-size: 0.75rem; margin-top: 4px; }
+  #tooltip .tt-desc { color: #aaa; margin-top: 4px; font-family: monospace; font-size: 0.75rem; }
+
+  /* ---- Settings modal ---- */
+  .settings-overlay {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+  }
+  .settings-overlay.open { display: flex; }
+  .settings-modal {
+    background: #12121e; border: 1px solid #2a2a3e; border-radius: 10px;
+    padding: 16px 20px; width: 360px; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+  .settings-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px;
+  }
+  .settings-title { color: #e0e0e0; font-weight: 600; font-size: 13px; }
+  .settings-close {
+    color: #555; cursor: pointer; font-size: 18px; line-height: 1;
+  }
+  .settings-close:hover { color: #aaa; }
+  .settings-body { display: flex; flex-direction: column; gap: 12px; }
+  .setting-row {
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .setting-label { color: #ccc; font-size: 12px; }
+  .setting-hint { color: #555; font-size: 9px; }
+  .setting-input {
+    width: 60px; text-align: center; padding: 4px; font-size: 11px;
+    background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 4px;
+    color: #ccc; outline: none;
+  }
+  .setting-input:focus { border-color: #7b8cff; }
+  .setting-divider {
+    border-top: 1px solid #222; margin: 4px 0;
+  }
+  /* ---- Map result ---- */
+  #map-zone { display: none; margin-bottom: 16px; }
+  #map-zone.visible { display: block; }
+  .map-header {
+    font-size: 0.9rem; font-weight: 600; color: #e0e0e0;
+    margin-bottom: 2px;
+  }
+  .map-meta {
+    font-size: 0.72rem; color: #888;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-bottom: 4px;
+  }
+  .map-signature {
+    font-size: 0.75rem; color: #7b8cff;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-bottom: 10px; white-space: pre-wrap; word-break: break-word;
+  }
+  .map-section-label {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #e8a86e; margin: 8px 0 4px; font-weight: 600;
+  }
+  .map-item {
+    font-size: 0.72rem; padding: 2px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: flex; gap: 6px; align-items: baseline;
+    cursor: pointer;
+  }
+  .map-item:hover { background: rgba(123, 140, 255, 0.05); }
+  .map-item-name {
+    color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .map-item-kind {
+    color: #666; font-size: 0.64rem; text-transform: lowercase;
+    min-width: 44px;
+  }
+  .map-item-file {
+    color: #444; font-size: 0.64rem; margin-left: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* ---- Trace result ---- */
+  #trace-zone { display: none; margin-bottom: 16px; }
+  #trace-zone.visible { display: block; }
+  .trace-hop {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 0; font-size: 0.75rem;
+  }
+  .trace-entity {
+    background: #12121e; border: 1px solid #2a2a3e; border-radius: 4px;
+    padding: 4px 8px; cursor: pointer;
+  }
+  .trace-entity:hover { border-color: #7b8cff; }
+  .trace-entity-name {
+    color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+  }
+  .trace-entity-meta {
+    color: #555; font-size: 0.64rem;
+  }
+  .trace-arrow {
+    color: #7b8cff; font-size: 0.68rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    white-space: nowrap;
+  }
+
+  /* ---- Cluster result ---- */
+  #cluster-zone { display: none; margin-bottom: 16px; }
+  #cluster-zone.visible { display: block; }
+  .cluster-header {
+    font-size: 0.9rem; font-weight: 600; color: #e0e0e0;
+    margin-bottom: 8px;
+  }
+  .cluster-rel {
+    font-size: 0.72rem; padding: 2px 0; color: #888;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .cluster-truncated {
+    font-size: 0.68rem; color: #555; margin-top: 4px;
+  }
+
+  /* ---- Collapse bar ---- */
+  #collapse-bar {
+    display: none; position: absolute; top: 30px; right: 10px;
+    color: #888; font-size: 11px;
+  }
+  #collapse-bar.visible { display: flex; gap: 8px; flex-wrap: wrap; }
+  .collapse-chip {
+    background: rgba(123, 140, 255, 0.1); border: 1px solid rgba(123, 140, 255, 0.3);
+    border-radius: 12px; padding: 2px 10px; color: #7b8cff; font-size: 10px;
+    cursor: pointer; display: flex; align-items: center; gap: 4px;
+  }
+  .collapse-chip:hover { background: rgba(123, 140, 255, 0.2); }
+  .collapse-chip .x { font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="tooltip">
+  <div class="tt-name"></div>
+  <div class="tt-type"></div>
+  <div class="tt-file"></div>
+  <div class="tt-desc"></div>
+</div>
+
+<!-- Settings modal overlay -->
+<div id="settings-overlay" class="settings-overlay">
+  <div id="settings-modal" class="settings-modal">
+    <div class="settings-header">
+      <span class="settings-title">Query Settings</span>
+      <span class="settings-close" id="settings-close">&times;</span>
+    </div>
+    <div class="settings-body">
+      <div class="setting-row">
+        <div><div class="setting-label">Max Results</div><div class="setting-hint">Cap on returned items</div></div>
+        <input id="set-max-results" type="number" class="setting-input" value="15" min="1" max="100">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Graph Hops</div><div class="setting-hint">Traversal depth from seed</div></div>
+        <input id="set-graph-hops" type="number" class="setting-input" value="1" min="0" max="5">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Min Score</div><div class="setting-hint">Similarity threshold</div></div>
+        <input id="set-min-score" type="number" class="setting-input" value="0.30" min="0" max="1" step="0.05">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Max Graph Entities</div><div class="setting-hint">Cap on entities from graph expansion</div></div>
+        <input id="set-max-entities" type="number" class="setting-input" value="10" min="1" max="100">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <!-- Left panel -->
+  <div id="left-panel">
+    <div id="panel-header">
+      <div class="panel-logo">
+        <span class="logo-icon">&#9670;</span>
+        <span class="logo-text">canopy</span>
+      </div>
+      <button id="gear-btn" class="gear-btn" title="Query settings">&#9881;</button>
+    </div>
+
+    <div id="results-area">
+      <div id="synthesis-zone">
+        <div class="zone-header">Synthesis</div>
+        <div id="synthesis-content"></div>
+      </div>
+      <div id="map-zone">
+        <div class="zone-header">Map</div>
+        <div id="map-content"></div>
+      </div>
+      <div id="trace-zone">
+        <div class="zone-header">Trace</div>
+        <div id="trace-content"></div>
+      </div>
+      <div id="cluster-zone">
+        <div class="zone-header">Cluster</div>
+        <div id="cluster-content"></div>
+      </div>
+      <div id="chunks-zone">
+        <div class="zone-header">Code Chunks</div>
+        <div id="chunks-list"></div>
+      </div>
+      <div id="symbols-zone">
+        <div class="zone-header">Symbols</div>
+        <div id="symbols-list"></div>
+      </div>
+    </div>
+
+    <div id="input-area">
+      <!-- Contextual seed/target fields -->
+      <div id="seed-field" class="entity-field" style="display:none">
+        <span class="field-label">SEED</span>
+        <div class="entity-input-wrap">
+          <input id="seed-input" type="text" class="entity-input" placeholder="Search entities...">
+          <span id="seed-clear" class="entity-clear" style="display:none">&times;</span>
+          <div id="seed-dropdown" class="entity-dropdown"></div>
+        </div>
+      </div>
+      <div id="target-field" class="entity-field" style="display:none">
+        <span class="field-label">TARGET</span>
+        <div class="entity-input-wrap">
+          <input id="target-input" type="text" class="entity-input" placeholder="Search entities...">
+          <span id="target-clear" class="entity-clear" style="display:none">&times;</span>
+          <div id="target-dropdown" class="entity-dropdown"></div>
+        </div>
+      </div>
+
+      <!-- Query row -->
+      <div id="query-row">
+        <select id="strategy-select">
+          <option value="search">search</option>
+          <option value="map">map</option>
+          <option value="trace">trace</option>
+          <option value="cluster">cluster</option>
+        </select>
+        <input id="query-input" type="text" placeholder="Ask about the codebase...">
+        <button id="submit-btn" class="submit-btn">&#8593;</button>
+      </div>
+      <div class="synth-row">
+        <label id="synth-label" class="synth-label" title="Enable AI synthesis of results">
+          <input id="synth-check" type="checkbox">
+          <span>synthesize</span>
+        </label>
+      </div>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <!-- Resize handle -->
+  <div id="resize-handle"></div>
+
+  <!-- Graph -->
+  <div id="graph-container">
+    <div id="graph"></div>
+    <div id="graph-status"></div>
+    <div id="collapse-bar"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/3d-force-graph@1"></script>
+<script>
+const GRAPH_DATA = __GRAPH_DATA__;
+const SYNTHESIS_AVAILABLE = __SYNTHESIS_AVAILABLE__;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function setText(el, str) { el.textContent = str; }
+
+// ---------------------------------------------------------------------------
+// Color by file — hash file path to HSL
+// ---------------------------------------------------------------------------
+const fileColorCache = {};
+function fileColor(filePath) {
+  if (fileColorCache[filePath]) return fileColorCache[filePath];
+  let hash = 0;
+  for (let i = 0; i < filePath.length; i++) {
+    hash = filePath.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  const color = `hsl(${hue}, 70%, 60%)`;
+  fileColorCache[filePath] = color;
+  return color;
+}
+
+function nodeSize(type) {
+  switch (type) {
+    case 'MODULE': return 14;
+    case 'TYPE': case 'TRAIT': return 10;
+    default: return 6;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let highlightNodes = null;
+let hoveredNode = null;
+let activeReader = null;
+
+// ---------------------------------------------------------------------------
+// Cluster aggregation state
+// ---------------------------------------------------------------------------
+const CLUSTER_THRESHOLD = 5000;
+const isClustered = GRAPH_DATA.nodes.length >= CLUSTER_THRESHOLD;
+
+// Maps built during aggregation
+let clusterMembers = new Map();    // clusterId -> Node[]
+let intraClusterLinks = new Map(); // clusterId -> Link[]
+let crossClusterLinks = new Map(); // clusterId -> [{targetClusterId, members: [{nodeId, targetNodeId}], weight}]
+let expandedClusters = new Set();  // set of expanded cluster IDs
+let clusterSuperNodes = new Map(); // clusterId -> super-node object
+
+// Reverse lookup: node id -> cluster id
+let nodeClusterMap = new Map();
+
+// Advanced settings (session state)
+const settings = {
+  maxResults: null,      // null = use server default
+  graphHops: null,
+  minScore: null,
+  maxGraphEntities: null,
+};
+
+// DOM refs
+const graphEl = document.getElementById('graph');
+const graphContainer = document.getElementById('graph-container');
+const graphStatus = document.getElementById('graph-status');
+const synthesisZone = document.getElementById('synthesis-zone');
+const synthesisContent = document.getElementById('synthesis-content');
+const chunksList = document.getElementById('chunks-list');
+const symbolsList = document.getElementById('symbols-list');
+const queryInput = document.getElementById('query-input');
+const statusEl = document.getElementById('status');
+const strategySelect = document.getElementById('strategy-select');
+const submitBtn = document.getElementById('submit-btn');
+const seedField = document.getElementById('seed-field');
+const targetField = document.getElementById('target-field');
+const seedInput = document.getElementById('seed-input');
+const targetInput = document.getElementById('target-input');
+const seedClear = document.getElementById('seed-clear');
+const targetClear = document.getElementById('target-clear');
+const seedDropdown = document.getElementById('seed-dropdown');
+const targetDropdown = document.getElementById('target-dropdown');
+const mapZone = document.getElementById('map-zone');
+const mapContent = document.getElementById('map-content');
+const traceZone = document.getElementById('trace-zone');
+const traceContent = document.getElementById('trace-content');
+const clusterZone = document.getElementById('cluster-zone');
+const clusterContent = document.getElementById('cluster-content');
+const synthCheck = document.getElementById('synth-check');
+const synthLabel = document.getElementById('synth-label');
+const gearBtn = document.getElementById('gear-btn');
+const settingsOverlay = document.getElementById('settings-overlay');
+const settingsClose = document.getElementById('settings-close');
+
+// Disable synthesize checkbox if not configured
+if (!SYNTHESIS_AVAILABLE) {
+  synthCheck.disabled = true;
+  synthLabel.classList.add('disabled');
+  synthLabel.title = 'Synthesis not configured — set synthesis_provider and synthesis_model in canopy.toml';
+}
+
+// ---------------------------------------------------------------------------
+// Strategy -> contextual fields
+// ---------------------------------------------------------------------------
+const SEED_STRATEGIES = new Set(['map','trace','cluster']);
+const TARGET_STRATEGIES = new Set(['trace']);
+const QUESTION_STRATEGIES = new Set(['search']);
+
+function updateFieldVisibility() {
+  const strat = strategySelect.value;
+  seedField.style.display = SEED_STRATEGIES.has(strat) ? 'flex' : 'none';
+  targetField.style.display = TARGET_STRATEGIES.has(strat) ? 'flex' : 'none';
+  // Update placeholder based on strategy
+  if (strat === 'search') {
+    queryInput.placeholder = 'Ask about the codebase...';
+    queryInput.style.display = '';
+  } else {
+    queryInput.style.display = 'none';
+  }
+}
+
+strategySelect.addEventListener('change', updateFieldVisibility);
+updateFieldVisibility();
+
+// ---------------------------------------------------------------------------
+// Fuzzy entity picker
+// ---------------------------------------------------------------------------
+let seedDebounce = null;
+let targetDebounce = null;
+let seedSelectedValue = null;
+let targetSelectedValue = null;
+
+function setupEntityPicker(input, dropdown, clearBtn, setSelected) {
+  let activeIndex = -1;
+  let items = [];
+
+  function closeDropdown() {
+    dropdown.classList.remove('open');
+    dropdown.innerHTML = '';
+    activeIndex = -1;
+    items = [];
+  }
+
+  function selectItem(name) {
+    input.value = name;
+    setSelected(name);
+    clearBtn.style.display = 'inline';
+    closeDropdown();
+  }
+
+  async function search(query) {
+    if (!query || query.length < 2) { closeDropdown(); return; }
+    try {
+      const res = await fetch('/symbols?q=' + encodeURIComponent(query) + '&limit=10');
+      if (!res.ok) return;
+      const results = await res.json();
+      if (results.length === 0) { closeDropdown(); return; }
+
+      dropdown.innerHTML = '';
+      items = results;
+      activeIndex = -1;
+
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const item = document.createElement('div');
+        item.className = 'entity-dropdown-item';
+        item.dataset.index = i;
+
+        // Highlight matching substring
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'entity-item-name';
+        const qUpper = query.toUpperCase();
+        const matchIdx = r.name.toUpperCase().indexOf(qUpper);
+        if (matchIdx >= 0) {
+          nameSpan.innerHTML = '';
+          if (matchIdx > 0) nameSpan.appendChild(document.createTextNode(r.name.slice(0, matchIdx)));
+          const mark = document.createElement('mark');
+          mark.textContent = r.name.slice(matchIdx, matchIdx + query.length);
+          nameSpan.appendChild(mark);
+          nameSpan.appendChild(document.createTextNode(r.name.slice(matchIdx + query.length)));
+        } else {
+          nameSpan.textContent = r.name;
+        }
+
+        const metaSpan = document.createElement('span');
+        metaSpan.className = 'entity-item-meta';
+        metaSpan.textContent = r.kind.toLowerCase() + ' \u00b7 ' + r.file_path;
+
+        item.appendChild(nameSpan);
+        item.appendChild(metaSpan);
+        item.addEventListener('click', () => selectItem(r.name));
+        dropdown.appendChild(item);
+      }
+
+      dropdown.classList.add('open');
+    } catch (e) {
+      console.error('Symbol search failed:', e);
+    }
+  }
+
+  input.addEventListener('input', () => {
+    const val = input.value.trim();
+    clearBtn.style.display = val ? 'inline' : 'none';
+    setSelected(null);
+    clearTimeout(input._debounce);
+    input._debounce = setTimeout(() => search(val), 150);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (!dropdown.classList.contains('open')) return;
+    const allItems = dropdown.querySelectorAll('.entity-dropdown-item');
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, allItems.length - 1);
+      allItems.forEach((el, i) => el.classList.toggle('active', i === activeIndex));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      allItems.forEach((el, i) => el.classList.toggle('active', i === activeIndex));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIndex >= 0 && items[activeIndex]) {
+        selectItem(items[activeIndex].name);
+      }
+    } else if (e.key === 'Escape') {
+      closeDropdown();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // Delay to allow click events on dropdown items
+    setTimeout(closeDropdown, 200);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    setSelected(null);
+    clearBtn.style.display = 'none';
+    closeDropdown();
+  });
+}
+
+setupEntityPicker(seedInput, seedDropdown, seedClear, (v) => { seedSelectedValue = v; });
+setupEntityPicker(targetInput, targetDropdown, targetClear, (v) => { targetSelectedValue = v; });
+
+// ---------------------------------------------------------------------------
+// Settings modal
+// ---------------------------------------------------------------------------
+gearBtn.addEventListener('click', () => settingsOverlay.classList.add('open'));
+settingsClose.addEventListener('click', () => settingsOverlay.classList.remove('open'));
+settingsOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
+});
+
+function readSettings() {
+  const val = (id) => {
+    const el = document.getElementById(id);
+    const v = parseFloat(el.value);
+    return isNaN(v) ? null : v;
+  };
+  settings.maxResults = val('set-max-results');
+  settings.graphHops = val('set-graph-hops');
+  settings.minScore = val('set-min-score');
+  settings.maxGraphEntities = val('set-max-entities');
+}
+
+// ---------------------------------------------------------------------------
+// Cluster aggregation
+// ---------------------------------------------------------------------------
+function buildClusteredGraph() {
+  if (!isClustered) return GRAPH_DATA;
+
+  const clusters = GRAPH_DATA.clusters || {};
+  const clusterLabels = GRAPH_DATA.cluster_labels || {};
+
+  // Build nodeClusterMap and clusterMembers
+  const ungrouped = [];
+  for (const node of GRAPH_DATA.nodes) {
+    const cid = clusters[node.id];
+    if (cid !== undefined) {
+      nodeClusterMap.set(node.id, cid);
+      if (!clusterMembers.has(cid)) clusterMembers.set(cid, []);
+      clusterMembers.get(cid).push(node);
+    } else {
+      ungrouped.push(node);
+    }
+  }
+
+  // Dissolve single-member clusters into ungrouped
+  for (const [cid, members] of clusterMembers) {
+    if (members.length <= 1) {
+      for (const m of members) {
+        nodeClusterMap.delete(m.id);
+        ungrouped.push(m);
+      }
+      clusterMembers.delete(cid);
+    }
+  }
+
+  // Build super-nodes
+  const superNodes = [];
+  for (const [cid, members] of clusterMembers) {
+    const label = clusterLabels[String(cid)] || `cluster ${cid}`;
+    const shortLabel = label.split('::')[0] || label;
+    const sn = {
+      id: `cluster::${cid}`,
+      name: shortLabel,
+      type: 'CLUSTER',
+      file: '',
+      line: 0,
+      description: `${members.length} entities — click to expand`,
+      _clusterId: cid,
+      _memberCount: members.length,
+    };
+    clusterSuperNodes.set(cid, sn);
+    superNodes.push(sn);
+  }
+
+  // Classify links
+  const interClusterAgg = new Map(); // "cid1::cid2" -> {weight, count}
+  const interLinks = [];
+  for (const link of GRAPH_DATA.links) {
+    const srcCid = nodeClusterMap.get(link.source);
+    const tgtCid = nodeClusterMap.get(link.target);
+
+    if (srcCid === undefined || tgtCid === undefined) {
+      // Edge involves ungrouped node — skip in initial view,
+      // will be added when related cluster is expanded
+      continue;
+    }
+
+    if (srcCid === tgtCid) {
+      // Intra-cluster edge
+      if (!intraClusterLinks.has(srcCid)) intraClusterLinks.set(srcCid, []);
+      intraClusterLinks.get(srcCid).push(link);
+    } else {
+      // Inter-cluster edge — aggregate
+      const key = srcCid < tgtCid ? `${srcCid}::${tgtCid}` : `${tgtCid}::${srcCid}`;
+      const [lo, hi] = srcCid < tgtCid ? [srcCid, tgtCid] : [tgtCid, srcCid];
+      if (!interClusterAgg.has(key)) {
+        interClusterAgg.set(key, { srcCid: lo, tgtCid: hi, weight: 0, count: 0, members: [] });
+      }
+      const agg = interClusterAgg.get(key);
+      agg.weight += link.weight || 1;
+      agg.count++;
+      agg.members.push({ nodeId: link.source, targetNodeId: link.target });
+    }
+  }
+
+  // Build cross-cluster lookup
+  for (const [, agg] of interClusterAgg) {
+    for (const cid of [agg.srcCid, agg.tgtCid]) {
+      if (!crossClusterLinks.has(cid)) crossClusterLinks.set(cid, []);
+    }
+    crossClusterLinks.get(agg.srcCid).push({
+      targetClusterId: agg.tgtCid,
+      members: agg.members,
+      weight: agg.weight,
+    });
+    crossClusterLinks.get(agg.tgtCid).push({
+      targetClusterId: agg.srcCid,
+      members: agg.members.map(m => ({ nodeId: m.targetNodeId, targetNodeId: m.nodeId })),
+      weight: agg.weight,
+    });
+  }
+
+  // Build inter-cluster link objects
+  for (const [, agg] of interClusterAgg) {
+    interLinks.push({
+      source: `cluster::${agg.srcCid}`,
+      target: `cluster::${agg.tgtCid}`,
+      type: 'CLUSTER_LINK',
+      weight: agg.weight,
+      _aggregatedCount: agg.count,
+    });
+  }
+
+  // In clustered mode, hide ungrouped nodes (MODULE entities etc.) from the overview.
+  // They appear when their related cluster is expanded or via search.
+  return {
+    nodes: superNodes,
+    links: interLinks,
+  };
+}
+
+function expandCluster(clusterId) {
+  if (expandedClusters.has(clusterId)) return;
+  expandedClusters.add(clusterId);
+
+  const gd = Graph.graphData();
+  const superNode = clusterSuperNodes.get(clusterId);
+  if (!superNode) return;
+
+  // Find the super-node's current position for placement
+  const sx = superNode.x || 0;
+  const sy = superNode.y || 0;
+  const sz = superNode.z || 0;
+
+  // Remove the super-node
+  const newNodes = gd.nodes.filter(n => n.id !== superNode.id);
+
+  // Add member nodes with positions near the super-node
+  const members = clusterMembers.get(clusterId) || [];
+  for (const member of members) {
+    member.x = sx + (Math.random() - 0.5) * 60;
+    member.y = sy + (Math.random() - 0.5) * 60;
+    member.z = sz + (Math.random() - 0.5) * 60;
+    newNodes.push(member);
+  }
+
+  // Remove inter-cluster edges from/to this super-node
+  let newLinks = gd.links.filter(l => {
+    const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+    return srcId !== superNode.id && tgtId !== superNode.id;
+  });
+
+  // Build set of all node IDs that will be in the graph for link validation
+  const visibleNodeIds = new Set(newNodes.map(n => n.id));
+  for (const member of members) visibleNodeIds.add(member.id);
+
+  // Add intra-cluster edges (only if both endpoints are visible)
+  const intra = intraClusterLinks.get(clusterId) || [];
+  for (const link of intra) {
+    const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+    const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+    if (visibleNodeIds.has(srcId) && visibleNodeIds.has(tgtId)) {
+      newLinks.push(link);
+    }
+  }
+
+  // Add cross-cluster edges (hybrid: member -> other super-node)
+  const cross = crossClusterLinks.get(clusterId) || [];
+  for (const entry of cross) {
+    const targetCid = entry.targetClusterId;
+    const memberIds = new Set(entry.members.map(m => m.nodeId));
+    for (const memberId of memberIds) {
+      if (!visibleNodeIds.has(memberId)) continue;
+      if (expandedClusters.has(targetCid)) {
+        const targetNodeIds = new Set(
+          entry.members
+            .filter(m => m.nodeId === memberId)
+            .map(m => m.targetNodeId)
+        );
+        for (const targetNodeId of targetNodeIds) {
+          if (visibleNodeIds.has(targetNodeId)) {
+            newLinks.push({
+              source: memberId,
+              target: targetNodeId,
+              type: 'CROSS_CLUSTER',
+              weight: 1,
+              _crossCluster: true,
+            });
+          }
+        }
+      } else {
+        const targetSuperNodeId = `cluster::${targetCid}`;
+        if (visibleNodeIds.has(targetSuperNodeId)) {
+          newLinks.push({
+            source: memberId,
+            target: targetSuperNodeId,
+            type: 'CROSS_CLUSTER',
+            weight: 1,
+            _crossCluster: true,
+          });
+        }
+      }
+    }
+  }
+
+  Graph.graphData({ nodes: newNodes, links: newLinks });
+  updateGraphStatus();
+  updateCollapseBar();
+}
+
+function collapseCluster(clusterId) {
+  if (!expandedClusters.has(clusterId)) return;
+  expandedClusters.delete(clusterId);
+
+  const gd = Graph.graphData();
+  const members = clusterMembers.get(clusterId) || [];
+  const memberIds = new Set(members.map(m => m.id));
+  const superNode = clusterSuperNodes.get(clusterId);
+
+  // Remove member nodes
+  const newNodes = gd.nodes.filter(n => !memberIds.has(n.id));
+  // Add back the super-node
+  newNodes.push(superNode);
+
+  // Remove intra-cluster and cross-cluster edges involving these members
+  let newLinks = gd.links.filter(l => {
+    const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+    return !memberIds.has(srcId) && !memberIds.has(tgtId);
+  });
+
+  // Build set of visible node IDs for link validation
+  const visibleNodeIds = new Set(newNodes.map(n => n.id));
+
+  // Re-add inter-cluster aggregated edges for this cluster
+  const cross = crossClusterLinks.get(clusterId) || [];
+  for (const entry of cross) {
+    const targetCid = entry.targetClusterId;
+    const targetSuperNodeId = `cluster::${targetCid}`;
+    if (!expandedClusters.has(targetCid)) {
+      if (visibleNodeIds.has(targetSuperNodeId)) {
+        const exists = newLinks.some(l => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          return (s === superNode.id && t === targetSuperNodeId) ||
+                 (t === superNode.id && s === targetSuperNodeId);
+        });
+        if (!exists) {
+          newLinks.push({
+            source: superNode.id,
+            target: targetSuperNodeId,
+            type: 'CLUSTER_LINK',
+            weight: entry.weight,
+            _aggregatedCount: entry.members.length,
+          });
+        }
+      }
+    } else {
+      // Target is expanded — re-add cross-cluster edges from target members to this super-node
+      for (const m of entry.members) {
+        if (visibleNodeIds.has(m.targetNodeId)) {
+          newLinks.push({
+            source: m.targetNodeId,
+            target: superNode.id,
+            type: 'CROSS_CLUSTER',
+            weight: 1,
+            _crossCluster: true,
+          });
+        }
+      }
+    }
+  }
+
+  Graph.graphData({ nodes: newNodes, links: newLinks });
+  updateGraphStatus();
+  updateCollapseBar();
+}
+
+const collapseBar = document.getElementById('collapse-bar');
+
+function updateCollapseBar() {
+  if (expandedClusters.size === 0) {
+    collapseBar.classList.remove('visible');
+    collapseBar.innerHTML = '';
+    return;
+  }
+  collapseBar.classList.add('visible');
+  collapseBar.innerHTML = '';
+
+  const clusterLabels = GRAPH_DATA.cluster_labels || {};
+  for (const cid of expandedClusters) {
+    const label = clusterLabels[String(cid)] || `cluster ${cid}`;
+    const shortLabel = label.split('::')[0] || label;
+    const chip = document.createElement('span');
+    chip.className = 'collapse-chip';
+    chip.appendChild(document.createTextNode(shortLabel + ' '));
+    const xSpan = document.createElement('span');
+    xSpan.className = 'x';
+    xSpan.textContent = '\u00d7';
+    chip.appendChild(xSpan);
+    chip.addEventListener('click', () => collapseCluster(cid));
+    collapseBar.appendChild(chip);
+  }
+}
+
+function applyHighlights(matchIds) {
+  highlightNodes = new Set();
+
+  if (!isClustered) {
+    highlightNodes = new Set(matchIds);
+    refreshGraph();
+    updateGraphStatus();
+    return;
+  }
+
+  // Highlight visible nodes directly; for nodes inside collapsed clusters,
+  // highlight the super-node instead (user can expand to see individual matches)
+  for (const id of matchIds) {
+    highlightNodes.add(id);
+    const cid = nodeClusterMap.get(id);
+    if (cid !== undefined && !expandedClusters.has(cid)) {
+      highlightNodes.add(`cluster::${cid}`);
+    }
+  }
+
+  refreshGraph();
+  updateGraphStatus();
+}
+
+// ---------------------------------------------------------------------------
+// Graph setup
+// ---------------------------------------------------------------------------
+const initialGraphData = buildClusteredGraph();
+
+const Graph = ForceGraph3D()
+  (graphEl)
+  .graphData(initialGraphData)
+  .backgroundColor('#0a0a0f')
+  .nodeVal(node => {
+    if (node.type === 'CLUSTER') {
+      const base = Math.log2((node._memberCount || 2) + 1) * 12;
+      return (hoveredNode && hoveredNode.id === node.id) ? base * 1.3 : base;
+    }
+    const base = nodeSize(node.type);
+    return (hoveredNode && hoveredNode.id === node.id) ? base * 2 : base;
+  })
+  .nodeColor(node => {
+    if (highlightNodes && !highlightNodes.has(node.id)) {
+      return 'rgba(60, 60, 80, 0.15)';
+    }
+    if (node.type === 'CLUSTER') {
+      const hue = (node._clusterId * 137) % 360;
+      if (highlightNodes && highlightNodes.has(node.id)) {
+        // Brighten based on fraction of members highlighted
+        const members = clusterMembers.get(node._clusterId) || [];
+        const total = members.length || 1;
+        const hitCount = members.filter(m => highlightNodes.has(m.id)).length;
+        if (hitCount === 0) return `hsl(${hue}, 60%, 55%)`;
+        const frac = hitCount / total;
+        // 50% base brightness for any match, lerp to 100% by member fraction
+        const t = 0.5 + frac * 0.5;
+        const sat = 60 + t * 30;    // 60% -> 90%
+        const lit = 55 + t * 25;    // 55% -> 80%
+        return `hsl(${hue}, ${sat}%, ${lit}%)`;
+      }
+      return `hsl(${hue}, 60%, 55%)`;
+    }
+    return fileColor(node.file);
+  })
+  .nodeOpacity(1.0)
+  .nodeLabel(() => '')
+  .linkColor(link => {
+    const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+    const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+    if (hoveredNode && (srcId === hoveredNode.id || tgtId === hoveredNode.id)) {
+      return 'rgba(200, 210, 255, 0.8)';
+    }
+    if (highlightNodes) {
+      if (highlightNodes.has(srcId) && highlightNodes.has(tgtId)) return 'rgba(120, 130, 180, 0.5)';
+      return 'rgba(60, 60, 80, 0.05)';
+    }
+    return 'rgba(120, 130, 180, 0.2)';
+  })
+  .linkWidth(link => {
+    if (link.type === 'CLUSTER_LINK') {
+      return Math.log2((link._aggregatedCount || 1) + 1) * 0.5;
+    }
+    if (link._crossCluster) return 0.2;
+    return 0.3;
+  })
+  .linkOpacity(1.0)
+  .onNodeHover(node => {
+    hoveredNode = node;
+    const tooltip = document.getElementById('tooltip');
+    if (!node) {
+      tooltip.style.display = 'none';
+      document.body.style.cursor = 'default';
+      Graph.nodeVal(Graph.nodeVal());
+      Graph.linkColor(Graph.linkColor());
+      return;
+    }
+    document.body.style.cursor = 'pointer';
+    tooltip.querySelector('.tt-name').textContent = node.name;
+    tooltip.querySelector('.tt-type').textContent = node.type;
+    if (node.type === 'CLUSTER') {
+      tooltip.querySelector('.tt-file').textContent = '';
+      tooltip.querySelector('.tt-desc').textContent = node.description;
+    } else {
+      tooltip.querySelector('.tt-file').textContent = node.file + ':' + node.line;
+      tooltip.querySelector('.tt-desc').textContent = node.description;
+    }
+    tooltip.style.display = 'block';
+    Graph.nodeVal(Graph.nodeVal());
+    Graph.linkColor(Graph.linkColor());
+  });
+
+if (isClustered) {
+  Graph.nodeResolution(4);
+}
+
+Graph.onNodeClick(node => {
+  if (node.type === 'CLUSTER' && node._clusterId !== undefined) {
+    expandCluster(node._clusterId);
+  }
+});
+
+// Size graph to its container (not the window)
+function resizeGraph() {
+  Graph.width(graphContainer.clientWidth);
+  Graph.height(graphContainer.clientHeight);
+}
+resizeGraph();
+window.addEventListener('resize', resizeGraph);
+
+// ---------------------------------------------------------------------------
+// Panel resize drag
+// ---------------------------------------------------------------------------
+{
+  const handle = document.getElementById('resize-handle');
+  const leftPanel = document.getElementById('left-panel');
+  let dragging = false;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const newWidth = Math.min(Math.max(e.clientX, 200), window.innerWidth * 0.6);
+    leftPanel.style.width = newWidth + 'px';
+    resizeGraph();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
+document.addEventListener('mousemove', e => {
+  const tooltip = document.getElementById('tooltip');
+  if (tooltip.style.display === 'block') {
+    tooltip.style.left = (e.clientX + 15) + 'px';
+    tooltip.style.top = (e.clientY + 15) + 'px';
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+function clearResults() {
+  synthesisZone.classList.remove('visible');
+  synthesisContent.textContent = '';
+  mapZone.classList.remove('visible');
+  mapContent.textContent = '';
+  traceZone.classList.remove('visible');
+  traceContent.textContent = '';
+  clusterZone.classList.remove('visible');
+  clusterContent.textContent = '';
+  chunksList.textContent = '';
+  symbolsList.textContent = '';
+}
+
+function refreshGraph() {
+  Graph.nodeColor(Graph.nodeColor());
+  Graph.linkColor(Graph.linkColor());
+}
+
+function onChunkClick(chunk) {
+  const matchedIds = [];
+  const nodes = GRAPH_DATA.nodes;
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (n.file === chunk.file_path && n.line >= chunk.line_range[0] && n.line <= chunk.line_range[1]) {
+      matchedIds.push(n.id);
+    }
+  }
+  if (matchedIds.length > 0) {
+    applyHighlights(matchedIds);
+  }
+}
+
+function renderChunks(chunks) {
+  chunksList.textContent = '';
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
+    const card = document.createElement('div');
+    card.className = 'chunk-card';
+    card.addEventListener('click', () => onChunkClick(c));
+
+    const header = document.createElement('div');
+    header.className = 'chunk-card-header';
+
+    const fileSpan = document.createElement('span');
+    fileSpan.className = 'chunk-file';
+    setText(fileSpan, c.file_path + ':' + c.line_range[0] + '-' + c.line_range[1]);
+
+    const meta = document.createElement('span');
+    meta.style.display = 'flex';
+    meta.style.gap = '6px';
+    meta.style.alignItems = 'center';
+
+    const langSpan = document.createElement('span');
+    langSpan.className = 'chunk-lang';
+    setText(langSpan, c.language);
+
+    const scoreSpan = document.createElement('span');
+    scoreSpan.className = 'chunk-score';
+    setText(scoreSpan, c.score.toFixed(3));
+
+    meta.appendChild(langSpan);
+    meta.appendChild(scoreSpan);
+    header.appendChild(fileSpan);
+    header.appendChild(meta);
+
+    const code = document.createElement('div');
+    code.className = 'chunk-code';
+    setText(code, c.content);
+
+    card.appendChild(header);
+    card.appendChild(code);
+    chunksList.appendChild(card);
+  }
+}
+
+function renderSymbols(symbols) {
+  symbolsList.textContent = '';
+  for (let i = 0; i < symbols.length; i++) {
+    const s = symbols[i];
+    const row = document.createElement('div');
+    row.className = 'symbol-row';
+
+    const kind = document.createElement('span');
+    kind.className = 'symbol-kind';
+    setText(kind, s.kind);
+
+    const name = document.createElement('span');
+    name.className = 'symbol-name';
+    setText(name, s.name);
+
+    const file = document.createElement('span');
+    file.className = 'symbol-file';
+    setText(file, s.file_path + ':' + s.line);
+
+    row.appendChild(kind);
+    row.appendChild(name);
+    row.appendChild(file);
+    symbolsList.appendChild(row);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Map / Trace / Cluster rendering
+// ---------------------------------------------------------------------------
+function renderMapResult(data) {
+  mapContent.textContent = '';
+  mapZone.classList.add('visible');
+
+  const e = data.entity;
+
+  const header = document.createElement('div');
+  header.className = 'map-header';
+  setText(header, e.name + ' [' + e.kind + ']');
+  mapContent.appendChild(header);
+
+  const meta = document.createElement('div');
+  meta.className = 'map-meta';
+  setText(meta, e.file_path + ':' + e.line);
+  mapContent.appendChild(meta);
+
+  if (e.signature) {
+    const sig = document.createElement('div');
+    sig.className = 'map-signature';
+    setText(sig, e.signature);
+    mapContent.appendChild(sig);
+  }
+
+  if (e.cluster_label) {
+    const cl = document.createElement('div');
+    cl.className = 'map-meta';
+    setText(cl, 'cluster: ' + e.cluster_label);
+    mapContent.appendChild(cl);
+  }
+
+  const sections = [
+    ['calls', e.calls], ['called_by', e.called_by],
+    ['references', e.references], ['referenced_by', e.referenced_by],
+    ['accepts', e.accepts], ['accepted_by', e.accepted_by],
+    ['returns', e.returns], ['returned_by', e.returned_by],
+    ['field_of', e.field_of], ['has_fields', e.has_fields],
+    ['implements', e.implements], ['implemented_by', e.implemented_by],
+  ];
+
+  for (const [label, items] of sections) {
+    if (!items || items.length === 0) continue;
+    const sectionLabel = document.createElement('div');
+    sectionLabel.className = 'map-section-label';
+    setText(sectionLabel, label.replace(/_/g, ' ') + ' (' + items.length + ')');
+    mapContent.appendChild(sectionLabel);
+
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'map-item';
+      row.addEventListener('click', () => applyHighlights([item.name]));
+
+      const kind = document.createElement('span');
+      kind.className = 'map-item-kind';
+      setText(kind, item.kind);
+
+      const name = document.createElement('span');
+      name.className = 'map-item-name';
+      setText(name, item.name);
+
+      const file = document.createElement('span');
+      file.className = 'map-item-file';
+      setText(file, item.file_path + ':' + item.line);
+
+      row.appendChild(kind);
+      row.appendChild(name);
+      row.appendChild(file);
+      mapContent.appendChild(row);
+    }
+  }
+}
+
+function renderTraceResult(data) {
+  traceContent.textContent = '';
+  traceZone.classList.add('visible');
+
+  if (!data.hops || data.hops.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'map-meta';
+    setText(empty, 'No trace found.');
+    traceContent.appendChild(empty);
+    return;
+  }
+
+  // Summary line
+  const names = [data.hops[0].from.name];
+  for (const hop of data.hops) names.push(hop.to.name);
+  const summary = document.createElement('div');
+  summary.className = 'map-header';
+  summary.style.marginBottom = '10px';
+  setText(summary, names.join(' \u2192 '));
+  traceContent.appendChild(summary);
+
+  // Render each hop
+  for (let i = 0; i < data.hops.length; i++) {
+    const hop = data.hops[i];
+
+    // Show source entity for first hop
+    if (i === 0) {
+      const fromEl = makeTraceEntity(hop.from);
+      traceContent.appendChild(fromEl);
+    }
+
+    // Arrow
+    const arrow = document.createElement('div');
+    arrow.className = 'trace-arrow';
+    arrow.style.padding = '2px 0 2px 16px';
+    const arrowText = hop.forward
+      ? '\u2502 --' + hop.edge_type + '-->'
+      : '\u2502 <--' + hop.edge_type + '--';
+    setText(arrow, arrowText);
+    traceContent.appendChild(arrow);
+
+    // Target entity
+    const toEl = makeTraceEntity(hop.to);
+    traceContent.appendChild(toEl);
+  }
+}
+
+function makeTraceEntity(candidate) {
+  const el = document.createElement('div');
+  el.className = 'trace-entity';
+  el.addEventListener('click', () => applyHighlights([candidate.name]));
+
+  const name = document.createElement('div');
+  name.className = 'trace-entity-name';
+  setText(name, candidate.name);
+
+  const meta = document.createElement('div');
+  meta.className = 'trace-entity-meta';
+  setText(meta, candidate.kind + ' \u00b7 ' + candidate.file_path + ':' + candidate.line);
+
+  el.appendChild(name);
+  el.appendChild(meta);
+  return el;
+}
+
+function renderClusterResult(data) {
+  clusterContent.textContent = '';
+  clusterZone.classList.add('visible');
+
+  const header = document.createElement('div');
+  header.className = 'cluster-header';
+  setText(header, data.label + ' (' + data.members.length + ' members)');
+  clusterContent.appendChild(header);
+
+  // Members (reuse map-item style)
+  for (const m of data.members) {
+    const row = document.createElement('div');
+    row.className = 'map-item';
+    row.addEventListener('click', () => applyHighlights([m.name]));
+
+    const kind = document.createElement('span');
+    kind.className = 'map-item-kind';
+    setText(kind, m.kind);
+
+    const name = document.createElement('span');
+    name.className = 'map-item-name';
+    setText(name, m.name);
+
+    const file = document.createElement('span');
+    file.className = 'map-item-file';
+    setText(file, m.file_path + ':' + m.line);
+
+    row.appendChild(kind);
+    row.appendChild(name);
+    row.appendChild(file);
+    clusterContent.appendChild(row);
+  }
+
+  if (data.truncated_members) {
+    const t = document.createElement('div');
+    t.className = 'cluster-truncated';
+    setText(t, '... and ' + data.truncated_members + ' more members');
+    clusterContent.appendChild(t);
+  }
+
+  // Relationships
+  if (data.relationships && data.relationships.length > 0) {
+    const relLabel = document.createElement('div');
+    relLabel.className = 'map-section-label';
+    relLabel.style.marginTop = '12px';
+    setText(relLabel, 'key relationships');
+    clusterContent.appendChild(relLabel);
+
+    for (const r of data.relationships) {
+      const rel = document.createElement('div');
+      rel.className = 'cluster-rel';
+      setText(rel, r.source + ' --' + r.edge_type + '--> ' + r.target);
+      clusterContent.appendChild(rel);
+    }
+  }
+
+  if (data.truncated_relationships) {
+    const t = document.createElement('div');
+    t.className = 'cluster-truncated';
+    setText(t, '... and ' + data.truncated_relationships + ' more relationships');
+    clusterContent.appendChild(t);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SSE query
+// ---------------------------------------------------------------------------
+async function runQuery(question) {
+  if (activeReader) {
+    try { activeReader.cancel(); } catch (_) {}
+    activeReader = null;
+  }
+
+  clearResults();
+  statusEl.textContent = 'searching...';
+
+  // Read current settings
+  readSettings();
+
+  const strat = strategySelect.value;
+  const body = {};
+  if (strat !== 'search') body.strategy = strat;
+  if (QUESTION_STRATEGIES.has(strat)) body.question = question;
+  if (seedSelectedValue && SEED_STRATEGIES.has(strat)) body.seed = seedSelectedValue;
+  if (targetSelectedValue && TARGET_STRATEGIES.has(strat)) body.target = targetSelectedValue;
+  if (synthCheck.checked) body.synthesize = true;
+  if (settings.maxResults !== null) body.max_results = Math.round(settings.maxResults);
+  if (settings.minScore !== null) body.min_score = settings.minScore;
+  if (settings.graphHops !== null) body.graph_hops = Math.round(settings.graphHops);
+  if (settings.maxGraphEntities !== null) body.max_graph_entities = Math.round(settings.maxGraphEntities);
+
+  let reader;
+  try {
+    const res = await fetch('/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      statusEl.textContent = 'error: ' + (errText || 'HTTP ' + res.status);
+      return;
+    }
+    reader = res.body.getReader();
+    activeReader = reader;
+  } catch (err) {
+    statusEl.textContent = 'error: ' + err.message;
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let cursorEl = null;
+  let synthesisActive = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+
+        let eventType = '';
+        let dataLines = [];
+        const lines = frame.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.startsWith('event:')) eventType = line.slice(6).trim();
+          else if (line.startsWith('data:')) dataLines.push(line.slice(5));
+        }
+        const data = dataLines.join('\n');
+
+        if (eventType === 'results') {
+          try {
+            const payload = JSON.parse(data);
+            applyHighlights(payload.matches || []);
+            if (payload.chunks) renderChunks(payload.chunks);
+            if (payload.symbols) renderSymbols(payload.symbols);
+            const stats = payload.stats || {};
+            statusEl.textContent = (payload.matches ? payload.matches.length : 0) + ' matches'
+              + (stats.query_ms ? ' \u00b7 ' + stats.query_ms + 'ms' : '');
+          } catch (parseErr) {
+            console.error('Failed to parse results:', parseErr);
+          }
+        } else if (eventType === 'map') {
+          try {
+            renderMapResult(JSON.parse(data));
+          } catch (parseErr) {
+            console.error('Failed to parse map:', parseErr);
+          }
+        } else if (eventType === 'trace') {
+          try {
+            renderTraceResult(JSON.parse(data));
+          } catch (parseErr) {
+            console.error('Failed to parse trace:', parseErr);
+          }
+        } else if (eventType === 'cluster') {
+          try {
+            renderClusterResult(JSON.parse(data));
+          } catch (parseErr) {
+            console.error('Failed to parse cluster:', parseErr);
+          }
+        } else if (eventType === 'synthesis') {
+          if (!synthesisActive) {
+            synthesisActive = true;
+            synthesisZone.classList.add('visible');
+            cursorEl = document.createElement('span');
+            cursorEl.className = 'cursor';
+            cursorEl.textContent = '|';
+            synthesisContent.appendChild(cursorEl);
+          }
+          synthesisContent.insertBefore(document.createTextNode(data), cursorEl);
+        } else if (eventType === 'done') {
+          if (cursorEl && cursorEl.parentNode) cursorEl.parentNode.removeChild(cursorEl);
+          cursorEl = null;
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') console.error('SSE read error:', err);
+  } finally {
+    if (activeReader === reader) activeReader = null;
+    if (cursorEl && cursorEl.parentNode) cursorEl.parentNode.removeChild(cursorEl);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Event handlers
+// ---------------------------------------------------------------------------
+function submitQuery() {
+  const strat = strategySelect.value;
+  if (QUESTION_STRATEGIES.has(strat)) {
+    const question = queryInput.value.trim();
+    if (!question) return;
+    runQuery(question);
+  } else {
+    // For map/trace/cluster — seed is required, question is not used
+    if (!seedSelectedValue) { statusEl.textContent = 'select a seed entity'; return; }
+    if (TARGET_STRATEGIES.has(strat) && !targetSelectedValue) { statusEl.textContent = 'select a target entity'; return; }
+    runQuery('');
+  }
+}
+
+queryInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); submitQuery(); }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    queryInput.value = '';
+    highlightNodes = null;
+    refreshGraph();
+    updateGraphStatus();
+    clearResults();
+    statusEl.textContent = '';
+    if (activeReader) { try { activeReader.cancel(); } catch (_) {} activeReader = null; }
+  }
+});
+
+submitBtn.addEventListener('click', submitQuery);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.activeElement !== queryInput
+      && document.activeElement !== seedInput && document.activeElement !== targetInput) {
+    queryInput.value = '';
+    highlightNodes = null;
+    refreshGraph();
+    updateGraphStatus();
+    clearResults();
+    statusEl.textContent = '';
+    if (activeReader) { try { activeReader.cancel(); } catch (_) {} activeReader = null; }
+  }
+});
+
+// Show node/edge count on load
+function updateGraphStatus() {
+  const gd = Graph.graphData();
+  const nodeCount = gd.nodes.length;
+  const edgeCount = gd.links.length;
+  const clusterCount = clusterSuperNodes.size;
+  const expandCount = expandedClusters.size;
+
+  let text = nodeCount + ' nodes';
+  if (isClustered && clusterCount > 0) {
+    if (expandCount > 0) {
+      text += ' (' + expandCount + ' expanded)';
+    } else {
+      text += ' (' + clusterCount + ' clusters)';
+    }
+  }
+  text += ' \u00b7 ' + edgeCount + ' edges';
+
+  if (highlightNodes && highlightNodes.size > 0) {
+    text += ' \u00b7 ' + highlightNodes.size + ' highlighted';
+  }
+
+  if (nodeCount > CLUSTER_THRESHOLD) {
+    text += ' \u00b7 \u26a0 performance may be reduced';
+  }
+
+  graphStatus.textContent = text;
+}
+updateGraphStatus();
+</script>
+</body>
+</html>
